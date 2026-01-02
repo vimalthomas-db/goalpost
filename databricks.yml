@@ -1,0 +1,51 @@
+# Auto-generated from config.env
+bundle:
+  name: goalpost
+
+sync:
+  exclude:
+    - "app/frontend/node_modules/**"
+    - "app/frontend/src/**"
+    - "app/frontend/public/**"
+    - "app/frontend/*.json"
+    - "app/frontend/*.ts"
+    - "app/frontend/*.js"
+    - "app/frontend/*.html"
+    - "**/__pycache__/**"
+    - "**/*.pyc"
+    - "**/.git/**"
+
+variables:
+  catalog_name:
+    default: vjs_demo
+  schema_name:
+    default: goalpost
+  warehouse_id:
+    default: 6480d9aca0e2e6fb
+  llm_endpoint:
+    default: vjs_endpoint
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://adb-984752964297111.11.azuredatabricks.net
+      profile: host3
+
+resources:
+  apps:
+    goalpost:
+      name: goalpost
+      description: "Goal tracking app with AI-powered planning"
+      source_code_path: ./app
+
+  jobs:
+    init_tables:
+      name: "Goalpost - Initialize Tables"
+      tasks:
+        - task_key: create_tables
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ./catalog/init_tables.sql

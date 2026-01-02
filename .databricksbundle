@@ -1,0 +1,14 @@
+# Files to ignore during bundle sync
+app/frontend/node_modules/
+app/frontend/src/
+app/frontend/public/
+__pycache__/
+*.pyc
+.git/
+workflows/
+notebooks/
+api-gateway/
+backend/
+frontend/
+sql/
+catalog/

@@ -1,0 +1,22 @@
+# Goalpost Backend Dependencies
+
+# Web framework
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9
+
+# Data validation
+pydantic==2.6.1
+pydantic-settings==2.1.0
+
+# Databricks SDK
+databricks-sdk==0.20.0
+databricks-sql-connector==3.0.1
+
+# Utilities
+python-dateutil==2.8.2
+uuid6==2024.1.12
+
+# Development
+httpx==0.26.0
+

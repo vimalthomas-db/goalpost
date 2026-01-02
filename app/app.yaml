@@ -1,0 +1,19 @@
+command:
+  - uvicorn
+  - backend.main:app
+  - --host
+  - 0.0.0.0
+  - --port
+  - "8000"
+
+env:
+  - name: CATALOG_NAME
+    value: "goalpost_catalog"
+  - name: SCHEMA_NAME
+    value: "goalpost"
+  - name: WAREHOUSE_ID
+    value: "fe8663ee24c4f771"
+  - name: LLM_ENDPOINT
+    value: "vjs_endpoint2"
+  - name: DEBUG
+    value: "false"
