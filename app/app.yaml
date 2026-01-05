@@ -12,8 +12,8 @@ env:
   - name: SCHEMA_NAME
     value: "goalpost"
   - name: WAREHOUSE_ID
-    value: "fe8663ee24c4f771"
+    value: "08a07bafc8924aaa"
   - name: LLM_ENDPOINT
-    value: "vjs_endpoint2"
+    value: "vjsendpoint1"
   - name: DEBUG
     value: "false"

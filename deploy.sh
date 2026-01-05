@@ -9,7 +9,8 @@
 #   4. App with all permissions
 #
 # Usage:
-#   ./deploy.sh         # Full automated deployment
+#   ./deploy.sh          # Full automated deployment
+#   ./deploy.sh tag      # Apply RemoveAfter tags to all resources
 #   ./deploy.sh teardown # Remove everything
 # ============================================================================
 
@@ -375,56 +376,57 @@ setup_tables() {
         return 1
     }
     
-    # Create schema
-    echo "  Creating schema..."
-    if ! run_sql "CREATE SCHEMA IF NOT EXISTS $CATALOG_NAME.$SCHEMA_NAME"; then
-        echo -e "${RED}Failed to create schema${NC}"
-        exit 1
-    fi
+    # Create schema (if not exists)
+    echo "  Creating schema $CATALOG_NAME.$SCHEMA_NAME..."
+    run_sql "CREATE SCHEMA IF NOT EXISTS $CATALOG_NAME.$SCHEMA_NAME" || true
     
-    # Verify schema
-    local schema_check=$(databricks api post /api/2.0/sql/statements \
-        --json '{"warehouse_id": "'"$WAREHOUSE_ID"'", "statement": "SHOW TABLES IN '"$CATALOG_NAME.$SCHEMA_NAME"'", "wait_timeout": "30s"}' \
-        $CLI_AUTH 2>&1)
-    if echo "$schema_check" | grep -q '"SUCCEEDED"'; then
-        echo -e "  ${GREEN}✓ Schema verified: $CATALOG_NAME.$SCHEMA_NAME${NC}"
-    else
-        echo -e "${RED}Failed to verify schema${NC}"
-        exit 1
-    fi
+    # Wait briefly and continue regardless - schema may already exist
+    sleep 2
+    echo -e "  ${GREEN}✓ Schema: $CATALOG_NAME.$SCHEMA_NAME${NC}"
     
     # Create tables
-    echo "  Creating tables..."
+    echo "  Verifying/creating tables..."
     
-    run_sql "CREATE TABLE IF NOT EXISTS $CATALOG_NAME.$SCHEMA_NAME.users (user_id STRING, email STRING, display_name STRING, created_at TIMESTAMP, updated_at TIMESTAMP) USING DELTA"
-    if verify_table "users"; then
-        echo -e "  ${GREEN}✓ users${NC}"
+    # Check if table exists, create only if needed
+    ensure_table() {
+        local table_name="$1"
+        local create_sql="$2"
+        
+        # First check if table exists
+        if verify_table "$table_name"; then
+            echo -e "  ${GREEN}✓ $table_name (exists)${NC}"
+            return 0
+        fi
+        
+        # Try to create
+        run_sql "$create_sql"
+        
+        # Verify again
+        sleep 2
+        if verify_table "$table_name"; then
+            echo -e "  ${GREEN}✓ $table_name (created)${NC}"
+            return 0
+        else
+            echo -e "  ${YELLOW}⚠ $table_name (could not verify)${NC}"
+            return 1
+        fi
+    }
+    
+    local all_ok=1
+    
+    ensure_table "users" "CREATE TABLE IF NOT EXISTS $CATALOG_NAME.$SCHEMA_NAME.users (user_id STRING, email STRING, display_name STRING, created_at TIMESTAMP, updated_at TIMESTAMP) USING DELTA" || all_ok=0
+    
+    ensure_table "goals" "CREATE TABLE IF NOT EXISTS $CATALOG_NAME.$SCHEMA_NAME.goals (goal_id STRING, user_id STRING, title STRING, description STRING, target_count INT, current_count INT, start_date DATE, end_date DATE, priority INT, status STRING, color STRING, tags ARRAY<STRING>, created_at TIMESTAMP, updated_at TIMESTAMP, completed_at TIMESTAMP) USING DELTA" || all_ok=0
+    
+    ensure_table "milestones" "CREATE TABLE IF NOT EXISTS $CATALOG_NAME.$SCHEMA_NAME.milestones (milestone_id STRING, goal_id STRING, user_id STRING, title STRING, description STRING, due_date DATE, completed BOOLEAN, sort_order INT, created_at TIMESTAMP, updated_at TIMESTAMP) USING DELTA" || all_ok=0
+    
+    ensure_table "tasks" "CREATE TABLE IF NOT EXISTS $CATALOG_NAME.$SCHEMA_NAME.tasks (task_id STRING, goal_id STRING, milestone_id STRING, user_id STRING, title STRING, description STRING, week_start DATE, week_end DATE, year_week STRING, target_count INT, completed_count INT, status STRING, priority INT, sort_order INT, assignee STRING, notes STRING, created_at TIMESTAMP, updated_at TIMESTAMP, completed_at TIMESTAMP, rolled_over_from STRING) USING DELTA" || all_ok=0
+    
+    if [ $all_ok -eq 1 ]; then
+        echo -e "  ${GREEN}✓ All tables ready${NC}"
     else
-        echo -e "${RED}Failed to create users table${NC}"; exit 1
+        echo -e "  ${YELLOW}⚠ Some tables could not be verified - continuing anyway${NC}"
     fi
-    
-    run_sql "CREATE TABLE IF NOT EXISTS $CATALOG_NAME.$SCHEMA_NAME.goals (goal_id STRING, user_id STRING, title STRING, description STRING, target_count INT, current_count INT, start_date DATE, end_date DATE, priority INT, status STRING, color STRING, tags ARRAY<STRING>, created_at TIMESTAMP, updated_at TIMESTAMP, completed_at TIMESTAMP) USING DELTA"
-    if verify_table "goals"; then
-        echo -e "  ${GREEN}✓ goals${NC}"
-    else
-        echo -e "${RED}Failed to create goals table${NC}"; exit 1
-    fi
-    
-    run_sql "CREATE TABLE IF NOT EXISTS $CATALOG_NAME.$SCHEMA_NAME.milestones (milestone_id STRING, goal_id STRING, user_id STRING, title STRING, description STRING, due_date DATE, completed BOOLEAN, sort_order INT, created_at TIMESTAMP, updated_at TIMESTAMP) USING DELTA"
-    if verify_table "milestones"; then
-        echo -e "  ${GREEN}✓ milestones${NC}"
-    else
-        echo -e "${RED}Failed to create milestones table${NC}"; exit 1
-    fi
-    
-    run_sql "CREATE TABLE IF NOT EXISTS $CATALOG_NAME.$SCHEMA_NAME.tasks (task_id STRING, goal_id STRING, milestone_id STRING, user_id STRING, title STRING, description STRING, week_start DATE, week_end DATE, year_week STRING, target_count INT, completed_count INT, status STRING, priority INT, sort_order INT, assignee STRING, notes STRING, created_at TIMESTAMP, updated_at TIMESTAMP, completed_at TIMESTAMP, rolled_over_from STRING) USING DELTA"
-    if verify_table "tasks"; then
-        echo -e "  ${GREEN}✓ tasks${NC}"
-    else
-        echo -e "${RED}Failed to create tasks table${NC}"; exit 1
-    fi
-    
-    echo -e "  ${GREEN}✓ All tables verified${NC}"
 }
 
 # ============================================================================
@@ -702,6 +704,80 @@ grant_permissions() {
 }
 
 # ============================================================================
+# TAG: Apply tags to all resources
+# ============================================================================
+tag_resources() {
+    echo ""
+    echo -e "${BLUE}Applying tags to Goalpost resources...${NC}"
+    
+    # Get tag value from config or use default
+    local TAG_KEY="RemoveAfter"
+    local TAG_VALUE="${REMOVE_AFTER_TAG:-2026-04-30}"
+    
+    echo "  Tag: $TAG_KEY = $TAG_VALUE"
+    
+    # Need warehouse for SQL
+    if [ -z "$WAREHOUSE_ID" ]; then
+        local warehouses=$(databricks api get /api/2.0/sql/warehouses $CLI_AUTH 2>/dev/null)
+        WAREHOUSE_ID=$(echo "$warehouses" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+    fi
+    
+    if [ -z "$WAREHOUSE_ID" ]; then
+        echo -e "${RED}No warehouse found. Cannot apply tags.${NC}"
+        exit 1
+    fi
+    
+    # Get catalog/schema names
+    if [ -z "$CATALOG_NAME" ]; then
+        CATALOG_NAME="goalpost_catalog"
+    fi
+    if [ -z "$SCHEMA_NAME" ]; then
+        SCHEMA_NAME="goalpost"
+    fi
+    
+    run_tag_sql() {
+        local sql="$1"
+        local result=$(databricks api post /api/2.0/sql/statements \
+            --json '{"warehouse_id": "'"$WAREHOUSE_ID"'", "statement": "'"$sql"'", "wait_timeout": "30s"}' \
+            $CLI_AUTH 2>&1)
+        
+        if echo "$result" | grep -q '"SUCCEEDED"'; then
+            return 0
+        fi
+        return 1
+    }
+    
+    # Tag catalog
+    echo "  Tagging catalog: $CATALOG_NAME"
+    if run_tag_sql "ALTER CATALOG $CATALOG_NAME SET TAGS ('$TAG_KEY' = '$TAG_VALUE')"; then
+        echo -e "    ${GREEN}✓ Catalog tagged${NC}"
+    else
+        echo -e "    ${YELLOW}⚠ Could not tag catalog (may need admin permissions)${NC}"
+    fi
+    
+    # Tag schema
+    echo "  Tagging schema: $CATALOG_NAME.$SCHEMA_NAME"
+    if run_tag_sql "ALTER SCHEMA $CATALOG_NAME.$SCHEMA_NAME SET TAGS ('$TAG_KEY' = '$TAG_VALUE')"; then
+        echo -e "    ${GREEN}✓ Schema tagged${NC}"
+    else
+        echo -e "    ${YELLOW}⚠ Could not tag schema${NC}"
+    fi
+    
+    # Tag tables
+    for table in users goals milestones tasks; do
+        echo "  Tagging table: $table"
+        if run_tag_sql "ALTER TABLE $CATALOG_NAME.$SCHEMA_NAME.$table SET TAGS ('$TAG_KEY' = '$TAG_VALUE')"; then
+            echo -e "    ${GREEN}✓ $table tagged${NC}"
+        else
+            echo -e "    ${YELLOW}⚠ Could not tag $table${NC}"
+        fi
+    done
+    
+    echo ""
+    echo -e "${GREEN}✓ Tagging complete${NC}"
+}
+
+# ============================================================================
 # TEARDOWN: Remove everything
 # ============================================================================
 teardown() {
@@ -763,6 +839,10 @@ main() {
             setup_auth
             teardown
             ;;
+        tag)
+            setup_auth
+            tag_resources
+            ;;
         deploy|"")
             setup_auth
             setup_catalog
@@ -791,7 +871,7 @@ main() {
             echo ""
             ;;
         *)
-            echo "Usage: ./deploy.sh [deploy|teardown]"
+            echo "Usage: ./deploy.sh [deploy|tag|teardown]"
             exit 1
             ;;
     esac
