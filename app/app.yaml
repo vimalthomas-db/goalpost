@@ -7,13 +7,17 @@ command:
   - "8000"
 
 env:
+  # Unity Catalog name (e.g., "goalpost_catalog", "main", "your_catalog")
   - name: CATALOG_NAME
-    value: "goalpost_catalog"
+    value: ""
+  # Schema name within the catalog
   - name: SCHEMA_NAME
     value: "goalpost"
+  # SQL Warehouse ID (e.g., "abc123def456")
   - name: WAREHOUSE_ID
-    value: "08a07bafc8924aaa"
+    value: ""
+  # LLM Serving Endpoint name (e.g., "databricks-claude-haiku-4-5", "databricks-meta-llama-3-1-70b-instruct")
   - name: LLM_ENDPOINT
-    value: "vjsendpoint1"
+    value: ""
   - name: DEBUG
     value: "false"

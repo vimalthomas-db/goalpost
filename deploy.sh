@@ -49,6 +49,9 @@ echo ""
 # AUTH: Setup Databricks CLI authentication
 # ============================================================================
 setup_auth() {
+    # Export host for CLI commands that use env vars
+    export DATABRICKS_HOST="$DATABRICKS_HOST"
+    
     # If no profile specified, use OAuth with host directly
     if [ -z "$DATABRICKS_PROFILE" ]; then
         echo "No profile specified, using OAuth..."
@@ -58,9 +61,8 @@ setup_auth() {
         
         if [ "$current_host" = "$DATABRICKS_HOST" ]; then
             echo -e "${GREEN}✓ Already authenticated to $DATABRICKS_HOST${NC}"
-            # Use host directly instead of profile
-            DATABRICKS_PROFILE=""
-            CLI_AUTH="--host $DATABRICKS_HOST"
+            # Use env var (CLI_AUTH empty means use DATABRICKS_HOST env var)
+            CLI_AUTH=""
             return 0
         fi
         
@@ -75,7 +77,9 @@ setup_auth() {
                 CLI_AUTH="--profile $oauth_profile"
                 echo "  Using profile: $oauth_profile"
             else
-                CLI_AUTH="--host $DATABRICKS_HOST"
+                # No profile found, use env var
+                CLI_AUTH=""
+                echo "  Using DATABRICKS_HOST env var"
             fi
             return 0
         else

@@ -3,6 +3,8 @@ bundle:
   name: goalpost
 
 sync:
+  include:
+    - "app/**"
   exclude:
     - "app/frontend/node_modules/**"
     - "app/frontend/src/**"
@@ -11,27 +13,33 @@ sync:
     - "app/frontend/*.ts"
     - "app/frontend/*.js"
     - "app/frontend/*.html"
+    - "app/frontend/*.config.*"
+    - "app/frontend/tsconfig.*"
     - "**/__pycache__/**"
     - "**/*.pyc"
     - "**/.git/**"
 
 variables:
+  # Unity Catalog name (e.g., "goalpost_catalog", "main")
   catalog_name:
-    default: vjs_demo
+    default: ""
+  # Schema name within the catalog
   schema_name:
     default: goalpost
+  # SQL Warehouse ID (e.g., "abc123def456")
   warehouse_id:
-    default: 6480d9aca0e2e6fb
+    default: ""
+  # LLM endpoint name (e.g., "databricks-claude-haiku-4-5", "databricks-meta-llama-3-1-70b-instruct")
   llm_endpoint:
-    default: vjs_endpoint
+    default: ""
 
 targets:
   dev:
     mode: development
     default: true
     workspace:
-      host: https://adb-984752964297111.11.azuredatabricks.net
-      profile: host3
+      # Your Databricks workspace URL (e.g., "https://your-workspace.cloud.databricks.com")
+      host: ""
 
 resources:
   apps:
